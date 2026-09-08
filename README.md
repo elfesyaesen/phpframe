@@ -106,6 +106,7 @@ Bu listenin tamamı **build zamanında** çalışır — ilk istekte değil.
 - [Olaylar](#olaylar)
 - [Gözlemlenebilirlik (Monitor)](#gözlemlenebilirlik-monitor)
 - [CLI komutları](#cli-komutları)
+- [Test](#test)
 - [Yeni modül eklemek](#yeni-modül-eklemek)
 - [Production'a alma](#productiona-alma)
 - [Yayınlamadan önce](#yayınlamadan-önce)
@@ -1599,6 +1600,102 @@ final class ShopReindexCommand extends Command
 
 ---
 
+## Test
+
+PHPUnit 13. Suite yapısı ROADMAP §0.9.2'yi izler ve **suite ayrımı kasıtlıdır**:
+her biri farklı altyapı gerektirir, dolayısıyla ayrı koşturulabilmesi gerekir.
+
+```bash
+composer test                  # tümü
+composer test:unit             # altyapı GEREKTİRMEZ
+composer test:integration      # DB/Redis ister; yokken atlar
+composer test:functional       # CANLI HTTP sunucusu ister
+composer test:coverage         # metin kapsam raporu
+```
+
+| Suite | Gerektirdiği | İçerik |
+|---|---|---|
+| `Unit` | — | Saf mantık: config objeleri, yardımcılar, doğrulama kuralları |
+| `Integration` | DB / Redis | Model + container sözleşmeleri |
+| `Functional` | **canlı HTTP sunucusu** | Uçtan uca istek/yanıt |
+| `Security` | — | Güvenlik invariant'ları (CSPRNG, kaçış, numaralandırma) |
+| `Performance` | — | Ölçüm; eşik kırılganlığı yüzünden ayrı tutulur |
+
+### Functional testleri koşturmak
+
+Bu suite **gerçek bir sunucuya** istek atar. Sebebi bir sınırlama:
+`Response` çıktıyı `header()` + `echo` ile doğrudan global çıktı akışına
+yazıyor, dolayısıyla süreç içinde dispatch etmek `ob_start()` gerektirir ve
+header'lar CLI'da doğrulanamaz — ki bu testlerin asıl konusu tam olarak
+durum kodları ve header'lar.
+
+```bash
+# 1. sunucuyu başlat
+php frame serve --port=8899
+
+# 2. başka bir terminalde
+PHPFRAME_TEST_URL=http://127.0.0.1:8899 \
+PHPFRAME_TEST_EMAIL=admin@example.com \
+PHPFRAME_TEST_PASSWORD=... \
+composer test
+```
+
+> **Kimlik bilgileri koda GÖMÜLMEZ.** `seed_rbac` migration'ı bilinçli olarak
+> admin kullanıcısı yaratmaz (halka açık bir framework'te gömülü kimlik
+> bilgisi shiplenmez) ve testler aynı ilkeyi izler: `PHPFRAME_TEST_EMAIL` /
+> `PHPFRAME_TEST_PASSWORD` tanımlı değilse kimlik gerektiren testler **atlanır**.
+> Sunucu erişilemezse Functional suite tamamen atlanır. Böylece `composer test`
+> hiçbir kurulum olmadan da anlamlı çalışır.
+
+### Testler sıra bağımsızdır
+
+Yerini aldıkları bash betiği katı bir sıra gerektiriyordu: `users_token`
+kullanıcı başına **tek satır** tutar (her login öncekini öldürür), refresh
+rotasyon yapar ve login rate limit'i 5/60. Burada her test kendi oturumunu
+açar ve `setUp()` rate limiter'ı temizler — testler herhangi bir sırada, tek
+tek koşabilir.
+
+### Kendi testinizi yazmak
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Shop;
+
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Shop\Services\PricingService;
+
+#[CoversClass(PricingService::class)]
+final class PricingServiceTest extends TestCase
+{
+    public function testAppliesVat(): void
+    {
+        self::assertSame(120.0, (new PricingService())->withVat(100.0, 0.20));
+    }
+}
+```
+
+`Tests\` öneki PSR-4 ile `tests/` dizinine bağlıdır (`autoload-dev`). Bu,
+first-party kodun küçük-harf konvansiyonuyla **çakışmaz**: Composer'ın
+autoloader'ı `config/config.php` içinde PHPFrame Autoloader'ından **önce**
+kaydedilir, dolayısıyla `Tests\` önekini o yakalar.
+
+HTTP testi için `Tests\Functional\FunctionalTestCase`'i extend edin —
+`get/post/put/delete` yardımcıları, `login()`, `assertErrorEnvelope()` ve
+rate-limit temizliği hazır gelir.
+
+### Bootstrap neden `config/config.php`
+
+`vendor/autoload.php` **yetmez**. Autoload hibrittir: Composer yalnızca
+`vendor/`'ü yükler, `System\`/`Api\`/`Monitor\` önekleri
+`System\Engine\Autoloader`'a aittir. `config/config.php` sürüm bariyerini,
+`.env` yüklemesini ve iki autoloader'ı **doğru sırayla** kurar.
+
+---
+
 ## Yeni modül eklemek
 
 Modül = kök dizinde, `[a-z][a-z0-9_]*` adlı, içinde `controllers`, `models`,
@@ -1684,25 +1781,23 @@ verir**. `container:compile` bunu çıktısında hatırlatır.
 
 ## Yayınlamadan önce
 
-Lisans **hallolmuş durumda**: proje MIT altında, `LICENSE` dosyası ve
-`composer.json`'daki `"license": "MIT"` alanı birbiriyle tutarlı. Kalan iki
-nokta paketlemeyle ilgili ve kararı sizde:
+Üç maddeden ikisi **kapandı**:
 
-**1. `docs/` git'te yok.** `.gitignore` `docs/` satırı içeriyor, yani `DI-plan.md`,
+- ✅ **Lisans** — proje MIT altında; `LICENSE` dosyası ve `composer.json`'daki
+  `"license": "MIT"` alanı tutarlı.
+- ✅ **`composer.lock`** — `.gitignore`'daki `*.lock` deseni kaldırıldı, dosya
+  artık takip ediliyor. `composer install` sürümleri yeniden üretebiliyor ve
+  `composer audit` garantisi geçerli.
+- ✅ **`tests/`** — PHPUnit kurulu, suite yapısı ROADMAP §0.9.2'yi izliyor.
+  Bkz. [Test](#test).
+
+Kalan tek nokta kararınıza bağlı:
+
+**`docs/` git'te yok.** `.gitignore` `docs/` satırı içeriyor, yani `DI-plan.md`,
 `ROADMAP` ve **`api-layer.md` GitHub'da görünmez**. Bu README katman sözleşmesini
 özetliyor ama tam metin yayınlanmıyor. `docs/` satırını kaldırmak ya da bu
 belgeleri README'ye taşımak gerekir. (`.gitignore` içindeki yorum bu çelişkiyi
 zaten not ediyor.)
-
-**2. `composer.lock`.** `.gitignore` içindeki `*.lock` deseni `composer.lock`'u da
-kapsıyor. Dosya git'e girmiyorsa `composer install` sürümleri **yeniden üretemez**
-ve `composer audit` garantisi zayıflar. Bir uygulama/framework deposunda
-`composer.lock` **commit edilmelidir**; deseni `*.lock` yerine daraltmayı
-değerlendirin.
-
-Ayrıca `tests/` dizini yoktur. Halka açık bir framework için ilk sorulacak soru
-"bu test ediliyor mu?" olur; `.gitignore` `tests/`'i bilinçli olarak ignore
-**etmiyor**, yani yer hazır.
 
 ---
 

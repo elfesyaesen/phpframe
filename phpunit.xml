@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PHPFrame test yapılandırması.
+
+  Suite ayrımı ROADMAP §0.9.2'deki dizin yapısını izler ve KASITLIDIR:
+  her suite farklı bir altyapı gerektirir, dolayısıyla ayrı koşturulabilmesi
+  gerekir.
+
+    Unit        → hiçbir altyapı gerektirmez. Saf mantık.
+    Integration → veritabanı/Redis ister; yokken markTestSkipped ile atlar.
+    Functional  → CANLI HTTP SUNUCUSU ister (PHPFRAME_TEST_URL).
+    Security    → güvenlik invariant'ları (kaçış, numaralandırma, CSPRNG).
+    Performance → ölçüm; CI'da eşik kırılganlığı yüzünden ayrı tutulur.
+
+  NOT: XML yorumlarında çift tire kullanılamaz, bu yüzden komut örnekleri
+  için README'ye ve `composer.json` scripts bölümüne bakın.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd" bootstrap="tests/bootstrap.php" colors="true" cacheDirectory="system/cache/phpunit" executionOrder="depends,defects" requireCoverageMetadata="false" beStrictAboutCoverageMetadata="false" beStrictAboutOutputDuringTests="true" failOnRisky="true" failOnWarning="true" displayDetailsOnTestsThatTriggerWarnings="true" displayDetailsOnTestsThatTriggerErrors="true" displayDetailsOnIncompleteTests="true" displayDetailsOnSkippedTests="true">
+  <testsuites>
+    <testsuite name="Unit">
+      <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="Integration">
+      <directory>tests/Integration</directory>
+    </testsuite>
+    <testsuite name="Functional">
+      <directory>tests/Functional</directory>
+    </testsuite>
+    <testsuite name="Security">
+      <directory>tests/Security</directory>
+    </testsuite>
+    <testsuite name="Performance">
+      <directory>tests/Performance</directory>
+    </testsuite>
+  </testsuites>
+  <source restrictNotices="true" restrictWarnings="true" ignoreIndirectDeprecations="true">
+    <include>
+      <directory>system</directory>
+      <directory>api</directory>
+      <directory>monitor</directory>
+    </include>
+    <exclude>
+      <!-- Üretilmiş kod: derlenmiş container ve route cache. -->
+      <directory>system/cache</directory>
+    </exclude>
+  </source>
+  <php>
+    <!--
+          Functional suite'in hedefi. Sunucu erişilemezse o suite kendini
+          atlar (testleri hataya düşürmez) — böylece `composer test` sunucu
+          olmadan da anlamlı çalışır.
+        -->
+    <env name="PHPFRAME_TEST_URL" value="http://127.0.0.1:8899"/>
+  </php>
+</phpunit>
