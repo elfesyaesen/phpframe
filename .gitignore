@@ -9,8 +9,42 @@ logs/
 vendor/
 *.cache
 
-# Framework generated caches (runtime output, keep directory structure)
-system/cache/*
+# ── Framework üretilmiş cache'leri ──────────────────────────────────────
+#
+# ⚠ DİKKAT: `system/cache/` HEM KAYNAK KOD DİZİNİDİR HEM RUNTIME YAZMA HEDEFİ.
+#
+#   Kaynak (System\Cache\* namespace'i) — REPOYA GİRMEK ZORUNDA:
+#     system/cache/AbstractCache.php   system/cache/CacheInterface.php
+#     system/cache/ArrayCache.php      system/cache/NullCache.php
+#     system/cache/CacheFactory.php    system/cache/RedisCache.php
+#
+#   Üretilmiş çıktı — repoya GİRMEMELİ:
+#     system/cache/container/  router/  twig/  rate/  phpunit/
+#
+# Burada eskiden tek satır `system/cache/*` yazıyordu ve yukarıdaki ALTI
+# KAYNAK DOSYAYI da depodan düşürüyordu. Depoyu klonlayan herkes ilk istekte
+# şunu alıyordu:
+#
+#     Class "System\Cache\CacheFactory" not found
+#
+# Hata yerelde GÖRÜNMEZ: dosyalar çalışma kopyasında duruyor, yalnızca git'te
+# yoklar. Bu yüzden yalnızca üretilmiş ALT DİZİNLERİN İÇERİĞİ yok sayılır.
+#
+# YENİ BİR CACHE ALT DİZİNİ EKLERSENİZ BURAYA DA EKLEYİN. Eklemeyi unutmak
+# üretilmiş dosyaların commit'lenmesine yol açar — can sıkıcı ama GÖRÜNÜR bir
+# hata; dizinin tamamını yok saymak ise sessiz ve yıkıcıydı.
+#
+# `.gitkeep` dosyaları korunur: dizin yapısı klonda da var olsun diye.
+# (Kod bu dizinleri zaten `mkdir` ile oluşturuyor — AtomicWriter, FileHandler,
+# RateLimiter, LocalFileStorage — yani .gitkeep bir yedek, bağımlılık değil.)
+system/cache/container/*
+system/cache/router/*
+system/cache/twig/*
+system/cache/rate/*
+system/cache/phpunit/*
+!system/cache/**/.gitkeep
+
+# ── Dahili belgeler ─────────────────────────────────────────────────────
 docs/
 
 # IDE
