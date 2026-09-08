@@ -1,0 +1,118 @@
+{% extends "@monitor/layout.twig" %}
+
+{% block title %}Monitor — İstekler{% endblock %}
+
+{% block subtitle %}
+  <span class="muted">son {{ filters.hours }} saat · {{ total }} kayıt</span>
+{% endblock %}
+
+{% block content %}
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ summary.total }}</div><div class="l">istek</div></div>
+    <div class="card"><div class="n s-5">{{ summary.errors }}</div><div class="l">5xx</div></div>
+    <div class="card"><div class="n d-slow">{{ summary.slow }}</div><div class="l">yavaş (≥{{ slowMs }}ms)</div></div>
+    <div class="card"><div class="n d-slow">{{ summary.n_plus_one }}</div><div class="l">N+1</div></div>
+    <div class="card"><div class="n">{{ summary.avg_ms }}</div><div class="l">ort. ms</div></div>
+    <div class="card"><div class="n">{{ summary.max_ms }}</div><div class="l">en yüksek ms</div></div>
+  </div>
+
+  <div class="panel">
+    {# Normal GET formu: CSP inline JS'i engellediği için filtreler tamamen
+       sunucu tarafında uygulanır. #}
+    <form class="filters" method="get" action="/monitor">
+      <div>
+        <label for="hours">Aralık</label>
+        <select id="hours" name="hours">
+          {% for r in ranges %}
+            <option value="{{ r }}"{{ filters.hours == r ? ' selected' : '' }}>
+              {{ r < 24 ? r ~ ' saat' : (r // 24) ~ ' gün' }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="method">Metod</label>
+        <select id="method" name="method">
+          <option value="">hepsi</option>
+          {% for m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}
+            <option value="{{ m }}"{{ filters.method == m ? ' selected' : '' }}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="status_class">Durum</label>
+        <select id="status_class" name="status_class">
+          <option value="">hepsi</option>
+          {% for c, cl in {'2': '2xx', '3': '3xx', '4': '4xx', '5': '5xx'} %}
+            <option value="{{ c }}"{{ filters.status_class == c ? ' selected' : '' }}>{{ cl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="q">URI içerir</label>
+        <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="/v1/api">
+      </div>
+      <div>
+        <label for="min_duration">Min süre (ms)</label>
+        <input type="number" id="min_duration" name="min_duration" value="{{ filters.min_duration }}" min="0" step="10">
+      </div>
+      <div>
+        <label for="n_plus_one">N+1</label>
+        <input type="checkbox" id="n_plus_one" name="n_plus_one" value="1"{{ filters.n_plus_one ? ' checked' : '' }}>
+      </div>
+      <button type="submit">Filtrele</button>
+      <a href="/monitor" class="muted" style="padding:7px 4px">sıfırla</a>
+    </form>
+  </div>
+
+  <div class="panel scroll">
+    {% if rows is empty %}
+      <div class="empty">Bu aralıkta kayıt yok.</div>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>Zaman</th><th>Metod</th><th>URI</th><th>Durum</th>
+            <th>Süre</th><th>Sorgu</th><th>Cache</th><th>Bellek</th><th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% set sclass = (row.status // 100) %}
+            {% set mclass = row.method|lower in ['get','post','put','patch','delete'] ? 'm-' ~ row.method|lower : 'm-other' %}
+            <tr>
+              <td class="muted">{{ row.created_at|date('d.m H:i:s') }}</td>
+              <td><span class="badge {{ mclass }}">{{ row.method }}</span></td>
+              <td class="uri">
+                <a href="/monitor/{{ row.request_id }}">{{ row.uri }}</a>
+                {% if row.n_plus_one %} <span class="flag">N+1</span>{% endif %}
+              </td>
+              <td class="s-{{ sclass }}">{{ row.status }}</td>
+              <td class="{{ row.duration_ms >= slowMs ? 'd-slow' : (row.duration_ms >= slowMs / 3 ? 'd-mid' : 'd-fast') }}">
+                {{ row.duration_ms }}ms
+              </td>
+              <td class="muted">{{ row.query_count }} / {{ row.query_time_ms }}ms</td>
+              <td class="muted">{{ row.cache_hits }}h {{ row.cache_misses }}m</td>
+              <td class="muted">{{ row.memory_kb }}kb</td>
+              <td class="muted">{{ row.ip }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+
+  {% if totalPages > 1 %}
+    <div class="pager">
+      {% if page > 1 %}
+        <a href="/monitor?page={{ page - 1 }}{{ queryString }}">‹ önceki</a>
+      {% endif %}
+      <span class="on">{{ page }} / {{ totalPages }}</span>
+      {% if page < totalPages %}
+        <a href="/monitor?page={{ page + 1 }}{{ queryString }}">sonraki ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+{% endblock %}

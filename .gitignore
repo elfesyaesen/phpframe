@@ -1,0 +1,41 @@
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# PHP
+vendor/
+*.cache
+
+# Framework generated caches (runtime output, keep directory structure)
+system/cache/*
+docs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# NOT: `tests/` KASTEN ignore EDİLMEZ.
+#
+# Eskiden burada `docs/` ve `tests/` birlikte duruyordu ("repo dışı tutulur").
+# `tests/` satırı kaldırıldı çünkü `docs/PHPFrame ROADMAP.md` §0.9.2 bunun tam
+# tersini şart koşuyor: "Testlerin repository dışında tutulmaması gerekir."
+# Halka açık bir framework'te kullanıcının ilk soracağı soru "bu framework test
+# ediliyor mu?" olur; testleri repo dışında tutmak o soruyu cevapsız bırakır.
+#
+# `docs/` ise (yukarıda, satır 14) BİLİNÇLİ olarak ignore'lu tutuluyor.
+# Sonucunun bilinmesi gerekir: ROADMAP ve DI-plan GitHub'daki repoda GÖRÜNMEZ.
+# Bu, ROADMAP §0.9.1'in "README/CONTRIBUTING/SECURITY/CHANGELOG oluştur" ve
+# §1.0.7'nin "docs/ ağacını yayınla" maddeleriyle çelişir — o maddelerin
+# zamanı geldiğinde bu satır yeniden değerlendirilmelidir.

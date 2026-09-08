@@ -1,0 +1,51 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Frame CLI - Modern PHP 8.5+ Console Application
+ *
+ * ARTIK CONTAINER KURUYOR. Eskiden `frame` yalnızca Autoloader + Application
+ * kuruyordu ve `CommandLoader` komutları argümansız `new $className()` ile
+ * örnekliyordu. Sonuç: CLI komutları bağımlılık alamıyor, her biri kendi
+ * servisini elle kuruyordu — örneğin altı ayrı komutta
+ * `new Database(new NullRecorder())`.
+ *
+ * Kernel web tarafıyla AYNI `config/providers.php` listesini kullanır;
+ * `supports(Sapi::Cli)` ile HTTP'ye özgü provider'lar (routing) dışlanır.
+ * Bu, kod tabanına dağılmış `PHP_SAPI !== 'cli'` kontrollerinin bildirimsel
+ * karşılığıdır.
+ *
+ * @version 1.0.0
+ */
+
+// Sadece CLI'dan çalışabilir
+if (PHP_SAPI !== 'cli') {
+    exit('Bu script sadece komut satırından çalıştırılabilir.' . PHP_EOL);
+}
+
+// Sürüm bariyeri + APP_ROOT + Env + Autoloader
+require_once __DIR__ . '/config/config.php';
+
+$kernel = System\Runtime\Kernel::create(System\Runtime\Sapi::Cli, APP_ROOT);
+
+// Komut scope'u: scoped servisler (Recorder, RequestId) komut süresince
+// yaşar ve sonunda dispose edilir. Uzun ömürlü bir worker döngüsü, her iş
+// için ayrı bir scope açabilir (ScopeManager bir yığındır).
+$scope = $kernel->beginRequestScope();
+
+$exitCode = 1;
+
+try {
+    /** @var System\Console\Application $application */
+    $application = $scope->get(System\Console\Application::class);
+
+    // Application::setAutoExit(false) ConsoleProvider'da ayarlanır: içindeki
+    // `exit`, aşağıdaki `finally` bloğunu (scope dispose) atlardı.
+    $exitCode = $application->run();
+} finally {
+    $scope->dispose();
+}
+
+exit($exitCode);

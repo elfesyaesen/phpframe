@@ -1,0 +1,116 @@
+{#
+  Monitor dashboard ortak iskeleti.
+
+  Tasarım kısıtları (Response::htmlResponse'un gönderdiği CSP'den gelir):
+   - script-src 'self'  -> INLINE <script> ÇALIŞMAZ. Dashboard tamamen
+     sunucu-render; filtreler normal GET formu, sıralama/sayfalama linklerle.
+     JS'e ihtiyaç duymamak aynı zamanda dashboard'ın izlenen sistem bozukken
+     de açılmasını garanti eder.
+   - style-src 'self' 'unsafe-inline' -> inline <style> serbest, bu yüzden
+     ayrı bir statik CSS dosyası (ve onu sunacak route) gerekmiyor.
+#}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Monitor{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --border: #30363d;
+      --text: #e6edf3; --muted: #8b949e;
+      --green: #3fb950; --blue: #58a6ff; --yellow: #d29922;
+      --red: #f85149; --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    h1 { font-size: 18px; margin: 0; }
+    .muted { color: var(--muted); }
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px; padding: 14px; margin-bottom: 16px;
+    }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 16px; min-width: 110px;
+    }
+    .card .n { font-size: 20px; font-weight: 600; }
+    .card .l { color: var(--muted); font-size: 12px; }
+    form.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+    input[type=text], input[type=number], select {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 13px;
+    }
+    button {
+      background: #21262d; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 7px 14px; font: inherit; cursor: pointer;
+    }
+    button:hover { background: #30363d; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    tbody tr:hover { background: #1c2128; }
+    .scroll { overflow-x: auto; }
+    .badge {
+      display: inline-block; padding: 1px 7px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; border: 1px solid;
+    }
+    .m-get    { color: var(--green);  border-color: var(--green); }
+    .m-post   { color: var(--blue);   border-color: var(--blue); }
+    .m-put,
+    .m-patch  { color: var(--yellow); border-color: var(--yellow); }
+    .m-delete { color: var(--red);    border-color: var(--red); }
+    .m-other  { color: var(--purple); border-color: var(--purple); }
+    .s-2 { color: var(--green); }
+    .s-3 { color: var(--blue); }
+    .s-4 { color: var(--yellow); }
+    .s-5 { color: var(--red); font-weight: 600; }
+    .d-fast { color: var(--green); }
+    .d-mid  { color: var(--yellow); }
+    .d-slow { color: var(--red); font-weight: 600; }
+    .flag {
+      color: var(--red); border: 1px solid var(--red); border-radius: 10px;
+      padding: 0 6px; font-size: 11px;
+    }
+    pre {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px; overflow-x: auto; margin: 0; font-size: 12.5px;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .uri { word-break: break-all; }
+    .pager { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .pager a, .pager span {
+      border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; font-size: 13px;
+    }
+    .pager .on { background: #21262d; font-weight: 600; }
+    dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+    dl.kv dt { color: var(--muted); }
+    dl.kv dd { margin: 0; word-break: break-all; }
+    h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; color: var(--muted); }
+    .empty { color: var(--muted); padding: 20px; text-align: center; }
+    @media (max-width: 700px) {
+      .wrap { padding: 12px; }
+      th, td { padding: 6px 5px; font-size: 12.5px; }
+      dl.kv { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1><a href="/monitor">Monitor</a></h1>
+      {% block subtitle %}{% endblock %}
+    </header>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

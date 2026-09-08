@@ -1,0 +1,123 @@
+{% extends "@monitor/layout.twig" %}
+
+{% block title %}Monitor — {{ record.method }} {{ record.uri }}{% endblock %}
+
+{% block subtitle %}
+  <span class="muted">/ istek detayı</span>
+{% endblock %}
+
+{% block content %}
+
+  {% set sclass = (record.status // 100) %}
+
+  <div class="panel">
+    <dl class="kv">
+      <dt>Request ID</dt>
+      <dd>{{ record.request_id }}</dd>
+
+      <dt>İstek</dt>
+      <dd>
+        <span class="badge m-{{ record.method|lower in ['get','post','put','patch','delete'] ? record.method|lower : 'other' }}">{{ record.method }}</span>
+        <span class="uri">{{ record.uri }}</span>
+      </dd>
+
+      <dt>Durum</dt>
+      <dd class="s-{{ sclass }}">{{ record.status }}</dd>
+
+      <dt>Süre</dt>
+      <dd class="{{ record.duration_ms >= slowMs ? 'd-slow' : 'd-fast' }}">{{ record.duration_ms }} ms</dd>
+
+      <dt>Bellek</dt>
+      <dd>{{ record.memory_kb }} kb</dd>
+
+      <dt>Sorgular</dt>
+      <dd>
+        {{ record.query_count }} adet / {{ record.query_time_ms }} ms
+        {% if record.n_plus_one %} <span class="flag">N+1 şüphesi</span>{% endif %}
+      </dd>
+
+      <dt>Cache</dt>
+      <dd>{{ record.cache_hits }} hit / {{ record.cache_misses }} miss</dd>
+
+      <dt>Route</dt>
+      <dd>{{ record.route_name ?: '—' }}</dd>
+
+      <dt>Kullanıcı</dt>
+      <dd>{{ record.user_uuid ?: '— (kimlik doğrulanmadı)' }}</dd>
+
+      <dt>IP</dt>
+      <dd>{{ record.ip ?: '—' }}</dd>
+
+      <dt>Zaman</dt>
+      <dd>{{ record.created_at }}</dd>
+    </dl>
+  </div>
+
+  {% if exceptions is not empty %}
+    <div class="panel">
+      <h2>Hatalar ({{ exceptions|length }})</h2>
+      {% for e in exceptions %}
+        <div style="margin-bottom:12px">
+          <div class="s-5">{{ e.exception_class }}</div>
+          <div>{{ e.message }}</div>
+          <div class="muted">{{ e.file }}:{{ e.line }}</div>
+          {% if e.trace %}
+            <pre>{{ e.trace }}</pre>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>Sorgular</h2>
+    {% if queries is empty %}
+      <div class="muted">
+        {% if record.query_count > 0 %}
+          Bu istek {{ record.query_count }} sorgu attı ama detay saklanmadı
+          (MONITOR_MAX_QUERIES sınırı).
+        {% else %}
+          Sorgu yok.
+        {% endif %}
+      </div>
+    {% else %}
+      {% if record.query_count > queries|length %}
+        <div class="muted" style="margin-bottom:10px">
+          {{ record.query_count }} sorgunun ilk {{ queries|length }} tanesi gösteriliyor
+          (MONITOR_MAX_QUERIES sınırı).
+        </div>
+      {% endif %}
+      {% for q in queries %}
+        <div style="margin-bottom:10px">
+          <div class="{{ q.slow ? 'd-slow' : 'd-fast' }}">
+            {{ q.duration_ms }} ms{% if q.slow %} <span class="flag">yavaş (≥{{ slowQueryMs }}ms)</span>{% endif %}
+          </div>
+          <pre>{{ q.sql_text }}</pre>
+          {% if q.bindings %}
+            <pre class="muted">{{ q.bindings }}</pre>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>İstek Header'ları</h2>
+    {# Hassas anahtarlar KeyScrubber tarafından maskelenmiş olarak saklandı;
+       burada ek bir maskeleme yapılmaz (tek maskeleme kaynağı ilkesi). #}
+    <pre>{{ headers ?: '—' }}</pre>
+  </div>
+
+  <div class="panel">
+    <h2>İstek Gövdesi</h2>
+    <pre>{{ requestBody ?: '—' }}</pre>
+  </div>
+
+  <div class="panel">
+    <h2>Yanıt Gövdesi</h2>
+    <pre>{{ responseBody ?: '—' }}</pre>
+  </div>
+
+  <p><a href="/monitor">‹ listeye dön</a></p>
+
+{% endblock %}

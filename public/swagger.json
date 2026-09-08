@@ -1,0 +1,1519 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "PHPFrame API",
+        "version": "4.0.0",
+        "description": "PHP 8.5 API "
+    },
+    "servers": [
+        {
+            "url": "http://phpframe.local/v1",
+            "description": "Production"
+        }
+    ],
+    "paths": {
+        "/api/auth/login": {
+            "post": {
+                "summary": "Kullanıcı girişi",
+                "description": "Geçerli e-posta + şifre ile yeni bir token çifti üretir. Aynı kullanıcı için önceki tüm token'lar geçersiz olur (tek aktif session politikası — yeni login eski cihazı logout eder).",
+                "tags": [
+                    "Auth"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "admin@admin.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "123456"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Başarılı giriş",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenPair"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Hatalı e-posta/şifre veya eksik alan"
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "summary": "Kullanıcı çıkışı (token revocation)",
+                "description": "Kullanıcının DB'deki token kaydını siler. Çağrıdan sonra hem access hem refresh token DB-lookup aşamasında reddedilir; JWT imzası geçerli kalsa bile middleware 401 döndürür. Client local token'ları temizlemeli ve login ekranına yönlendirmeli.",
+                "tags": [
+                    "Auth"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Çıkış başarılı, token'lar revoke edildi"
+                    },
+                    "400": {
+                        "description": "Aktif session bulunamadı"
+                    },
+                    "401": {
+                        "description": "Geçersiz/expired access token"
+                    }
+                }
+            }
+        },
+        "/api/auth/refresh": {
+            "post": {
+                "summary": "Token yenile (rotation + reuse detection)",
+                "description": "**Authorization: Bearer <refresh_token>** olarak çağrılır (access token DEĞİL — type kontrolü 401 verir). Atomik rotation: yeni access+refresh çifti üretilir, eski refresh hash'i `previous_refresh_token_hash` kolonuna taşınır. Aynı refresh token ikinci kez gönderilirse **reuse detection** tetiklenir; kullanıcının tüm session'ları silinir ve re-login gerekir. Swagger'da test ederken her başarılı çağrı sonrası response'daki yeni `refresh_token`'ı kullanın — eskisi artık geçersizdir.",
+                "tags": [
+                    "Auth"
+                ],
+                "security": [
+                    {
+                        "refreshAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Yeni token çifti",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenPair"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Geçersiz/expired refresh token, type uyumsuzluğu veya reuse detection (tüm session'lar silindi)"
+                    },
+                    "404": {
+                        "description": "Token sahibi kullanıcı bulunamadı"
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                }
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "summary": "Authenticated Kullanıcı Bilgileri",
+                "description": "Bearer access token'a sahip kullanıcının kayıt bilgilerini döner. Token revoke edilmiş veya tip 'access' değilse 401.",
+                "tags": [
+                    "Auth"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Başarılı",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Geçersiz/expired/revoke edilmiş access token"
+                    },
+                    "404": {
+                        "description": "Token sahibi kullanıcı kaydı bulunamadı"
+                    }
+                }
+            }
+        },
+        "/api/users/change-password": {
+            "post": {
+                "summary": "Şifre değiştirme",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "current_password",
+                                    "password",
+                                    "password_confirmation"
+                                ],
+                                "properties": {
+                                    "current_password": {
+                                        "type": "string",
+                                        "format": "password"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "minLength": 6
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "format": "password"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Şifre güncellendi"
+                    },
+                    "400": {
+                        "description": "Mevcut şifre hatalı"
+                    },
+                    "401": {
+                        "description": "Yetkisiz"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası"
+                    }
+                }
+            }
+        },
+        "/api/users/reset-password": {
+            "post": {
+                "summary": "Parola sıfırlama talebi (bağlantı + kod)",
+                "tags": [
+                    "Users"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Başarılı"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası"
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                },
+                "description": "Adrese tek kullanımlık bir sıfırlama BAĞLANTISI ve 6 haneli bir KOD e-postalar. Parola E-POSTALANMAZ.\n\nİkisi aynı kaydın anahtarıdır: biri kullanıldığında diğeri de ölür.\n  • Bağlantı → POST /api/users/reset-password/confirm\n  • Kod      → POST /api/users/reset-password/verify-code\n\nMobil-only istemcilerde kod her koşulda çalışır (mail bilgisayarda açılsa, uygulama kurulu olmasa, ya da mail istemcisi bağlantıyı tıklanabilir göstermese bile). Bağlantı `PASSWORD_RESET_URL` ayarına bağlıdır.\n\nE-posta numaralandırma koruması: adres kayıtlı olsun olmasın AYNI 200 yanıtı döner. Mail gönderimi başarısız olsa bile 200 döner — durum kodundan kayıtlı adres çıkarılamaz."
+            }
+        },
+        "/api/users/register": {
+            "post": {
+                "summary": "Yeni kullanıcı kaydı",
+                "description": "Email ve username yalnızca aktif (deleted_at IS NULL) kullanıcılar arasında benzersizdir. Soft-delete edilmiş bir hesabın email/username değeri yeniden register edilebilir — bu durumda yeni bir uuid ile yeni hesap oluşur, eski kayıt audit için soft-deleted olarak korunur.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RegisterRequest"
+                            },
+                            "example": {
+                                "username": "yenikullanici",
+                                "email": "kullanici@ornek.com",
+                                "password": "",
+                                "password_confirmation": "",
+                                "firstname": "Ad",
+                                "lastname": "Soyad",
+                                "phone": "5551112233"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Kayıt başarılı"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası — şema ihlali ya da email/username aktif bir kullanıcıda zaten kullanımda. İki katmanlı koruma: (1) Validator (unique_active) request başında reddeder. (2) DB partial unique index (WHERE deleted_at IS NULL) — concurrent register race senaryosunda validator'ı geçen istek de bu kodla döner. message alanı `user.email_taken` veya `user.username_taken` çevirisini içerir."
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                }
+            }
+        },
+        "/api/users/me": {
+            "get": {
+                "summary": "Profil Görüntüle",
+                "description": "Kullanıcının profilini döner: uuid, username, email, firstname, lastname, phone, avatar_url, created_at, updated_at.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Başarılı",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserProfile"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Kullanıcı bulunamadı"
+                    }
+                }
+            },
+            "put": {
+                "summary": "Profil Düzenle (PATCH semantik, replace-all emergency_contacts)",
+                "description": "Yalnızca gönderilen alanlar güncellenir. emergency_contacts gönderilirse mevcut liste TAMAMEN yenisiyle değiştirilir (replace-all). emergency_contacts gönderilmezse mevcut liste korunur. email bu endpoint'te değiştirilemez (silent ignore).",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateProfileRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Güncellendi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserProfile"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası (boş body / geçersiz alan / gelecek doğum tarihi / 10'dan fazla acil kişi)"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Hesap Sil (soft-delete)",
+                "description": "Kullanıcı kendi hesabını soft-delete eder (deleted_at = NOW()). current_password ile re-confirm zorunlu — çalınmış access token ile silinmeyi engeller. Başarılı silmede tüm refresh/access token'lar revoke edilir (users_token kaydı silinir). Soft-delete sonrası login, profile ve reset-password endpoint'leri kullanıcıyı görmez. Email ve username partial unique index (WHERE deleted_at IS NULL) ile korunur — silinen hesabın email/username değeri yeniden register edilebilir; eski kayıt audit için soft-deleted olarak saklanır.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "current_password"
+                                ],
+                                "properties": {
+                                    "current_password": {
+                                        "type": "string",
+                                        "format": "password"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Hesap silindi"
+                    },
+                    "400": {
+                        "description": "Mevcut şifre hatalı"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası"
+                    },
+                    "500": {
+                        "description": "Silme başarısız"
+                    }
+                }
+            }
+        },
+        "/api/users/me/avatar": {
+            "post": {
+                "summary": "Profil Resmi Yükle / Değiştir",
+                "description": "multipart/form-data ile `avatar` alanı içinde tek dosya gönderilir. Mevcut avatar varsa otomatik replace edilir — eski dosya storage'dan silinir. Allow-list: `image/jpeg`, `image/png`, `image/webp`. Max 5 MB. Gerçek MIME tipi `finfo` ile tespit edilir; dosya uzantısına veya Content-Type header'ına güvenilmez. Dosyalar webroot dışındaki `catalog/` dizininde tutulur, doğrudan URL ile erişilemez.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "avatar"
+                                ],
+                                "properties": {
+                                    "avatar": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "JPEG / PNG / WebP, en fazla 5 MB"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yüklendi (gövde boş)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Dosya yok / izin verilmeyen MIME / boyut aşımı"
+                    },
+                    "500": {
+                        "description": "Yazma hatası"
+                    }
+                }
+            },
+            "get": {
+                "summary": "Profil Resmini İndir / Görüntüle",
+                "description": "Kullanıcının kendi avatarını binary olarak döner. Bearer token zorunlu — public erişim yoktur. `Cache-Control: private, max-age=300`. Content-Type yüklenen gerçek MIME tipinden okunur.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Avatar binary",
+                        "content": {
+                            "image/jpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "image/png": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "image/webp": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Avatar yok"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Profil Resmini Sil",
+                "description": "Avatar varsa DB'deki kaydı temizler ve dosyayı `catalog/` altından siler.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Silindi (gövde boş)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Avatar yok"
+                    }
+                }
+            }
+        },
+        "/api/admin/roles": {
+            "get": {
+                "summary": "Rolleri listele",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rol listesi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Role"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Rol oluştur",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 100,
+                                        "example": "editor"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Oluşturuldu",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "uuid": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Ad zaten kullanımda / doğrulama hatası"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/roles/{uuid}": {
+            "put": {
+                "summary": "Rolü yeniden adlandır",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 100
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Güncellendi"
+                    },
+                    "404": {
+                        "description": "Rol bulunamadı"
+                    },
+                    "422": {
+                        "description": "Ad zaten kullanımda"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Rolü sil",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Silindi"
+                    },
+                    "404": {
+                        "description": "Rol bulunamadı"
+                    },
+                    "409": {
+                        "description": "Rol bir kullanıcıya atalı (silinemez)"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/roles/{uuid}/permissions": {
+            "put": {
+                "summary": "Rolün yetkilerini ayarla (tam-küme replace)",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "permissions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "description": "Yetki uuid listesi; [] tüm yetkileri kaldırır"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Güncellendi"
+                    },
+                    "404": {
+                        "description": "Rol bulunamadı"
+                    },
+                    "422": {
+                        "description": "Geçersiz yetki uuid"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/permissions": {
+            "get": {
+                "summary": "Yetkileri listele",
+                "tags": [
+                    "Admin - Yetkiler"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Yetki listesi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Permission"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Yetki oluştur",
+                "tags": [
+                    "Admin - Yetkiler"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 100,
+                                        "example": "reports.view"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Oluşturuldu",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "uuid": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Ad zaten kullanımda"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/permissions/{uuid}": {
+            "delete": {
+                "summary": "Yetkiyi sil",
+                "tags": [
+                    "Admin - Yetkiler"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Silindi"
+                    },
+                    "404": {
+                        "description": "Yetki bulunamadı"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_uuid}/role": {
+            "put": {
+                "summary": "Kullanıcıya rol ata (tek-rol)",
+                "tags": [
+                    "Admin - Roller"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "user_uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "role"
+                                ],
+                                "properties": {
+                                    "role": {
+                                        "type": "string",
+                                        "description": "Rol adı",
+                                        "example": "administrator"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Atandı"
+                    },
+                    "404": {
+                        "description": "Rol bulunamadı"
+                    },
+                    "422": {
+                        "description": "Geçersiz kullanıcı"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_uuid}/permissions": {
+            "put": {
+                "summary": "Kullanıcıya özel yetki (+/-) ayarla",
+                "tags": [
+                    "Admin - Yetkiler"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "user_uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "permission"
+                                ],
+                                "properties": {
+                                    "permission": {
+                                        "type": "string",
+                                        "description": "Yetki adı"
+                                    },
+                                    "effect": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "enum": [
+                                            "grant",
+                                            "deny",
+                                            null
+                                        ],
+                                        "description": "grant(+)/deny(-); null override'ı kaldırır"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Güncellendi"
+                    },
+                    "404": {
+                        "description": "Yetki bulunamadı"
+                    },
+                    "401": {
+                        "description": "Kimlik doğrulanmadı"
+                    },
+                    "403": {
+                        "description": "Yetkisiz (administrator değil)"
+                    }
+                }
+            }
+        },
+        "/api/users/reset-password/confirm": {
+            "post": {
+                "summary": "Sıfırlama bağlantısını kullanarak parolayı değiştir",
+                "description": "Sıfırlama token'ını tüketir ve yeni parolayı yazar. Token TEK KULLANIMLIKTIR: başarılı çağrıdan sonra kullanıcının tüm sıfırlama token'ları silinir.\n\nBaşarı hâlinde kullanıcının TÜM oturumları kapatılır (access/refresh token'ları geçersizleşir) — parolası ele geçirilmiş bir kullanıcının sıfırlama yapması, saldırganın elindeki token'ı da düşürür.\n\nGeçersiz ve süresi geçmiş token AYNI 404'ü döner; ayrım istemciye sızdırılmaz.\n\nALTERNATİF: aynı sıfırlama kaydı 6 haneli bir kodla da tüketilebilir — bkz. POST /api/users/reset-password/verify-code. Biri kullanıldığında diğeri ölür.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "token",
+                                    "password",
+                                    "password_confirmation"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "description": "Sıfırlama bağlantısındaki `token` parametresi (64 karakter hex)."
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 6,
+                                        "description": "Yeni parola. Kurallar kayıt/parola değiştirme ile AYNI."
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Parola güncellendi, oturumlar kapatıldı"
+                    },
+                    "404": {
+                        "description": "Token geçersiz veya süresi dolmuş"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası (token biçimi, parola kuralları, onay uyuşmazlığı)"
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                }
+            }
+        },
+        "/api/users/reset-password/verify-code": {
+            "post": {
+                "summary": "6 haneli kod ile parolayı değiştir (mobil)",
+                "description": "Sıfırlama e-postasındaki 6 haneli kodu tüketir ve yeni parolayı yazar. Web sayfası ya da deep link kurulumu GEREKTİRMEZ — mobil istemcinin varsayılan yolu.\n\n`email` zorunludur: kod tek başına aranamaz. Yalnızca koda bakan bir sorgu tüm kullanıcılar arasında eşleşme arardı, yani tek denemeyle \"o kodu bekleyen herhangi bir hesap\" ele geçirilebilirdi.\n\nDENEME BÜTÇESİ: kod 6 hane (10^6). `PASSWORD_RESET_MAX_ATTEMPTS` (varsayılan 5) hatalı denemeden sonra kayıt SİLİNİR — bağlantı da birlikte ölür. Sayaç kaydın kendisinde tutulduğu için IP döndürerek aşılamaz. Bütçe bitince kullanıcı yeni bir talep oluşturur.\n\nBaşarı hâlinde kullanıcının TÜM oturumları kapatılır ve hem kod hem bağlantı silinir.\n\nBilinmeyen e-posta, yanlış kod, süresi geçmiş kayıt ve bütçesi bitmiş kayıt AYNI 404'ü döner; ayrım istemciye sızdırılmaz.",
+                "tags": [
+                    "Users"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "code",
+                                    "password",
+                                    "password_confirmation"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "pattern": "^[0-9]{6}$",
+                                        "example": "047312",
+                                        "description": "Mail'deki 6 haneli kod. BAŞTAKİ SIFIRLAR ANLAMLIDIR — string olarak gönderin, sayıya çevirmeyin."
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 6,
+                                        "description": "Yeni parola. Kurallar kayıt/parola değiştirme ile AYNI."
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Parola güncellendi, oturumlar kapatıldı, kod ve bağlantı silindi"
+                    },
+                    "404": {
+                        "description": "E-posta/kod geçersiz, süresi dolmuş veya deneme bütçesi bitmiş"
+                    },
+                    "422": {
+                        "description": "Validasyon hatası (kod biçimi, parola kuralları, onay uyuşmazlığı)"
+                    },
+                    "429": {
+                        "description": "Çok fazla istek (rate limit) — Retry-After header'ı döner"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Access token (JWT, type=access). `/auth/login` veya `/auth/refresh` response'undaki `access_token` değerini `Bearer <token>` formatında gönderin. Token revoke edildiyse (logout) veya tipi access değilse 401 döner."
+            },
+            "refreshAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Refresh token (JWT, type=refresh). YALNIZCA `/auth/refresh` için. Tek kullanımlık: çağrı sonrası yeni bir refresh token döner; eskisi geçersiz olur. Aynı refresh token ikinci kez kullanılırsa **reuse detection** tetiklenir ve kullanıcının tüm session'ları silinir."
+            }
+        },
+        "parameters": {
+            "AcceptLanguage": {
+                "name": "Accept-Language",
+                "in": "header",
+                "required": false,
+                "description": "İçeriğin döneceği dil. Desteklenen: `tr` (varsayılan), `en`. RFC 7231 — `en-US,tr;q=0.9` formatı q-weight ile sıralanır. Unsupported veya boş ise TR fallback. Yanıt header'ında `Content-Language` döner.",
+                "schema": {
+                    "type": "string",
+                    "enum": [
+                        "tr",
+                        "en"
+                    ],
+                    "default": "tr",
+                    "example": "en"
+                }
+            },
+            "DeviceUuidPath": {
+                "name": "uuid",
+                "in": "path",
+                "required": true,
+                "description": "Hedef cihazın UUID'si (cihaz kayıt sırasında dönen uuid).",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "d820d962-e918-4da2-aef0-733223be5512"
+                }
+            },
+            "WidgetUuidPath": {
+                "name": "uuid",
+                "in": "path",
+                "required": true,
+                "description": "Kullanıcı widget kaydının UUID'si (POST /api/widgets ile oluşturulan).",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "934a589b-c56b-44c7-b5a5-55972b686550"
+                }
+            },
+            "WidgetTypeUuidPath": {
+                "name": "uuid",
+                "in": "path",
+                "required": true,
+                "description": "Widget tipi UUID'si (GET /api/widgets/types ile alabilirsiniz).",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "StartDate": {
+                "name": "start_date",
+                "in": "query",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "example": "2026-04-01 00:00:00"
+            },
+            "EndDate": {
+                "name": "end_date",
+                "in": "query",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "example": "2026-04-06 23:59:59"
+            },
+            "StartDateRequired": {
+                "name": "start_date",
+                "in": "query",
+                "required": true,
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
+            "EndDateRequired": {
+                "name": "end_date",
+                "in": "query",
+                "required": true,
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
+            "Limit": {
+                "name": "limit",
+                "in": "query",
+                "schema": {
+                    "type": "integer",
+                    "default": 100,
+                    "maximum": 1000
+                }
+            },
+            "Offset": {
+                "name": "offset",
+                "in": "query",
+                "schema": {
+                    "type": "integer",
+                    "default": 0
+                }
+            },
+            "Interval": {
+                "name": "interval",
+                "in": "query",
+                "schema": {
+                    "type": "string",
+                    "enum": [
+                        "1 minute",
+                        "5 minutes",
+                        "15 minutes",
+                        "30 minutes",
+                        "1 hour",
+                        "1 day",
+                        "1 week",
+                        "1 month"
+                    ],
+                    "default": "1 hour"
+                }
+            }
+        },
+        "schemas": {
+            "User": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "username": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "firstname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "TokenPair": {
+                "type": "object",
+                "description": "Login veya refresh akışı sonucu dönen token çifti. `access_token` korumalı endpoint'lerde Bearer olarak; `refresh_token` yalnızca `/auth/refresh`'te kullanılır. Her token'da `type` claim'i bulunur (`access` veya `refresh`); yanlış tipte kullanım 401 döner.",
+                "properties": {
+                    "access_token": {
+                        "type": "string",
+                        "description": "Kısa ömürlü, `type=access` JWT. TTL `ACCESS_TOKEN_EXPIRE` (.env) ile kontrol edilir."
+                    },
+                    "refresh_token": {
+                        "type": "string",
+                        "description": "Uzun ömürlü, `type=refresh` JWT. Tek kullanımlık; refresh çağrısından sonra yenisi gelir."
+                    },
+                    "expired_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Access token'ın süre dolma anı (server saatine göre)."
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/User"
+                    }
+                }
+            },
+            "UserProfile": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "username": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "firstname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "avatar_url": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Profil resmi varsa GET endpoint'inin relative path'i, yoksa null. Bearer token ile çağrılır, binary döner.",
+                        "example": "/v1/api/users/me/avatar"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "UpdateProfileRequest": {
+                "type": "object",
+                "description": "PATCH semantik - gonderilen alanlar guncellenir, digerleri korunur. En az bir alan gonderilmelidir.",
+                "properties": {
+                    "firstname": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "nullable": true
+                    },
+                    "lastname": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "nullable": true
+                    },
+                    "phone": {
+                        "type": "string",
+                        "maxLength": 20,
+                        "nullable": true
+                    }
+                }
+            },
+            "RegisterRequest": {
+                "type": "object",
+                "required": [
+                    "username",
+                    "email",
+                    "password",
+                    "password_confirmation"
+                ],
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 50,
+                        "pattern": "^[a-zA-Z0-9]+$"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password",
+                        "minLength": 6
+                    },
+                    "password_confirmation": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "firstname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "Role": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "editor"
+                    },
+                    "is_superadmin": {
+                        "type": "integer",
+                        "enum": [
+                            0,
+                            1
+                        ],
+                        "description": "1 ise tüm yetkiler (administrator)"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Permission": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "users.update"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            }
+        }
+    }
+}

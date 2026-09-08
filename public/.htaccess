@@ -1,0 +1,25 @@
+## No directory listings
+<IfModule mod_autoindex.c>
+  IndexIgnore *
+</IfModule>
+Options -Indexes
+
+## Security headers
+<IfModule mod_headers.c>
+  Header set Referrer-Policy "no-referrer"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Permissions-Policy "interest-cohort=()"
+</IfModule>
+
+RewriteEngine On
+
+# Forward Authorization header (FastCGI/PHP-FPM bazi setup'larda dusurulur)
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
+
+# Var olan dosya/dizin ve statik asset uzantilari icin rewrite yok;
+# diger her sey index.php'ye gider.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !.*\.(ico|gif|jpg|jpeg|png|webp|js|css|svg)
+RewriteRule ^([^?]*) index.php?route=$1 [L,QSA]
