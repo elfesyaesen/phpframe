@@ -1,0 +1,36 @@
+{
+    "name": "phpframe/phpframe",
+    "description": "DI-first PHP 8.5 application framework",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.5",
+        "firebase/php-jwt": "^7.1",
+        "phpmailer/phpmailer": "^6.10",
+        "psr/container": "^2.0",
+        "symfony/translation": "^8.1",
+        "twig/twig": "^3.28"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "platform": {
+            "php": "8.5.6"
+        }
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.3"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite=Unit",
+        "test:integration": "phpunit --testsuite=Integration",
+        "test:functional": "phpunit --testsuite=Functional",
+        "test:coverage": "phpunit --coverage-text"
+    }
+}

@@ -1,0 +1,156 @@
+{% extends "@monitor/layout.twig" %}
+
+{#
+  İstek kayıtları — filtrelenebilir, sayfalanmış liste. Kenar çubuğundaki
+  "Tüm istekler" ve altındaki hazır görünümler bu sayfaya farklı filtrelerle
+  gelir.
+#}
+
+{% block title %}Monitor — İstek kayıtları{% endblock %}
+
+{% block head %}
+  <style>
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+    .field input[type=text], .field input[type=number], .field select {
+      height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-2);
+      background: var(--bg-2); color: var(--text); font: 13px var(--sans); min-width: 110px;
+    }
+    .field input[type=text] { min-width: 260px; }
+    .field input:focus, .field select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+    .check { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--bg-2); font-size: 13px; cursor: pointer; }
+    .check input { accent-color: var(--accent); margin: 0; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      position: sticky; top: 0; background: var(--panel); text-align: left; padding: 10px 14px;
+      font-size: 11.5px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: var(--panel-2); }
+    td.uri { white-space: normal; word-break: break-all; min-width: 260px; }
+    td.uri a { color: var(--text); font-family: var(--mono); font-size: 12.5px; }
+    td.uri a:hover { color: var(--accent); }
+    .dur { display: flex; align-items: center; gap: 10px; min-width: 140px; }
+    .dur .track { flex: 1; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; min-width: 50px; }
+    .dur .track span { display: block; height: 100%; border-radius: 99px; background: currentColor; }
+    .dur b { font: 600 12.5px var(--mono); min-width: 64px; text-align: right; }
+    .r { text-align: right; }
+
+    .pager { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+    .pager .spacer { flex: 1; }
+
+    @media (max-width: 640px) { .field input[type=text] { min-width: 0; width: 100%; } }
+  </style>
+{% endblock %}
+
+{% block topbar %}
+  <h1>İstek kayıtları</h1>
+  <span class="pill num">{{ total|number_format(0, ',', '.') }}</span>
+  {% include "@monitor/_range.twig" %}
+{% endblock %}
+
+{% block content %}
+
+  <section class="panel">
+    {# Normal GET formu: CSP inline JS'i engellediği için filtreler tamamen
+       sunucu tarafında uygulanır. #}
+    <form class="filters" method="get" action="/monitor/requests">
+      <input type="hidden" name="hours" value="{{ filters.hours }}">
+      {% if filters.live %}<input type="hidden" name="live" value="1">{% endif %}
+      <div class="field">
+        <label for="q">URI içerir</label>
+        <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="/v1/api/…">
+      </div>
+      <div class="field">
+        <label for="method">Metod</label>
+        <select id="method" name="method">
+          <option value="">Tümü</option>
+          {% for m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] %}
+            <option value="{{ m }}"{{ filters.method == m ? ' selected' : '' }}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="status_class">Durum</label>
+        <select id="status_class" name="status_class">
+          <option value="">Tümü</option>
+          {% for c, cl in {'2': '2xx', '3': '3xx', '4': '4xx', '5': '5xx'} %}
+            <option value="{{ c }}"{{ filters.status_class == c ? ' selected' : '' }}>{{ cl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="min_duration">Min. süre (ms)</label>
+        <input type="number" id="min_duration" name="min_duration" value="{{ filters.min_duration }}" min="0" step="10" placeholder="0">
+      </div>
+      <label class="check" for="n_plus_one">
+        <input type="checkbox" id="n_plus_one" name="n_plus_one" value="1"{{ filters.n_plus_one ? ' checked' : '' }}> N+1
+      </label>
+      <button type="submit" class="btn btn-primary">Uygula</button>
+      <a href="/monitor/requests?hours={{ filters.hours }}{{ filters.live ? '&live=1' : '' }}" class="btn btn-ghost">Temizle</a>
+    </form>
+
+    {% if rows is empty %}
+      <div class="empty">
+        <strong>Kayıt yok</strong>
+        Bu aralıkta ve filtrelerle eşleşen istek bulunamadı.
+      </div>
+    {% else %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zaman</th><th>Metod</th><th>URI</th><th>Durum</th>
+              <th>Süre</th><th class="r">Sorgu</th><th class="r">Cache</th><th class="r">Bellek</th><th>IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              {% set sclass = (row.status // 100) %}
+              {% set mclass = row.method|lower in ['get','post','put','patch','delete'] ? 'm-' ~ row.method|lower : 'm-other' %}
+              {% set dclass = row.duration_ms >= slowMs ? 'd-slow' : (row.duration_ms >= slowMs / 3 ? 'd-mid' : 'd-fast') %}
+              <tr data-rid="{{ row.request_id }}">
+                <td class="muted num" title="{{ row.created_at }}">{{ row.created_at|date('d.m H:i:s') }}</td>
+                <td><span class="badge {{ mclass }}">{{ row.method }}</span></td>
+                <td class="uri">
+                  <a href="/monitor/requests/{{ row.request_id }}">{{ row.uri }}</a>
+                  {% if row.n_plus_one %} <span class="flag">N+1</span>{% endif %}
+                </td>
+                <td><span class="status s-{{ sclass }}">{{ row.status }}</span></td>
+                <td>
+                  <div class="dur {{ dclass }}">
+                    <div class="track"><span style="width:{{ maxMs > 0 ? max(2, row.duration_ms / maxMs * 100) : 0 }}%"></span></div>
+                    <b>{{ row.duration_ms|number_format(1, ',', '.') }} ms</b>
+                  </div>
+                </td>
+                <td class="r muted num">{{ row.query_count }} <span class="faint">· {{ row.query_time_ms|number_format(1, ',', '.') }} ms</span></td>
+                <td class="r muted num">{{ row.cache_hits }}<span class="faint">/</span>{{ row.cache_misses }}</td>
+                <td class="r muted num">{{ (row.memory_kb / 1024)|number_format(1, ',', '.') }} MB</td>
+                <td class="muted mono">{{ row.ip }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    {% if totalPages > 1 %}
+      <div class="pager">
+        <span class="muted num">Sayfa {{ page }} / {{ totalPages }}</span>
+        <span class="spacer"></span>
+        {% if page > 1 %}
+          <a class="btn" href="/monitor/requests?page={{ page - 1 }}{{ queryString }}">‹ Önceki</a>
+        {% endif %}
+        {% if page < totalPages %}
+          <a class="btn" href="/monitor/requests?page={{ page + 1 }}{{ queryString }}">Sonraki ›</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+{% endblock %}

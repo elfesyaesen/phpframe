@@ -1,0 +1,222 @@
+{% extends "@monitor/layout.twig" %}
+
+{% block title %}Monitor — {{ record.method }} {{ record.uri }}{% endblock %}
+
+{% block head %}
+  <style>
+    .crumb { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .crumb .back {
+      display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex: none;
+      border: 1px solid var(--border-2); background: var(--panel); color: var(--muted);
+    }
+    .crumb .back:hover { color: var(--text); border-color: var(--accent); text-decoration: none; }
+    .crumb .uri { font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .strip > div { padding: 16px 18px; border-right: 1px solid var(--border); min-width: 0; }
+    .strip > div:last-child { border-right: 0; }
+    .strip .l { font-size: 12px; color: var(--muted); }
+    .strip .n { font-size: 20px; font-weight: 700; margin-top: 2px; letter-spacing: -.01em; }
+    .strip .n small { font-size: 12px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+
+    .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+    .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); margin: 0; }
+    .kv dt, .kv dd { padding: 10px 18px; border-bottom: 1px solid var(--border); }
+    .kv dt { color: var(--muted); font-size: 13px; }
+    .kv dd { margin: 0; word-break: break-all; font-family: var(--mono); font-size: 12.5px; }
+    .kv dt:nth-last-of-type(1), .kv dd:last-of-type { border-bottom: 0; }
+
+    .q { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .q:last-child { border-bottom: 0; }
+    .q-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
+    .q-idx { font: 600 11px var(--mono); color: var(--faint); min-width: 26px; }
+    .q-bar { flex: 1; height: 4px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+    .q-bar span { display: block; height: 100%; border-radius: 99px; background: currentColor; }
+    .q-ms { font: 600 12.5px var(--mono); min-width: 72px; text-align: right; }
+
+    .exc { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .exc:last-child { border-bottom: 0; }
+    .exc-class { font: 700 13px var(--mono); color: var(--red); }
+    .exc-msg { font-size: 14px; margin: 4px 0 2px; }
+    .exc-loc { font: 12px var(--mono); color: var(--muted); margin-bottom: 10px; word-break: break-all; }
+    .panel-err { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+    .panel-err .panel-head { background: var(--red-soft); border-radius: var(--radius) var(--radius) 0 0; }
+
+    details > summary {
+      list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px; font-size: 13.5px; font-weight: 600;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before {
+      content: ""; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg); transition: transform .15s; margin-right: 2px;
+    }
+    details[open] > summary::before { transform: rotate(45deg); }
+    details[open] > summary { border-bottom: 1px solid var(--border); }
+    details .body { padding: 14px 18px; }
+    details.inner > summary { padding: 6px 0 0; font-size: 12px; font-weight: 500; color: var(--muted); border: 0; }
+    details.inner[open] > summary { border: 0; margin-bottom: 8px; }
+
+    @media (max-width: 1200px) {
+      .cols { grid-template-columns: 1fr; }
+      .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .strip > div:nth-child(3n) { border-right: 0; }
+      .strip > div:nth-child(-n+3) { border-bottom: 1px solid var(--border); }
+    }
+    @media (max-width: 640px) {
+      .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kv { grid-template-columns: 1fr; }
+      .kv dt { border-bottom: 0; padding-bottom: 0; }
+    }
+  </style>
+{% endblock %}
+
+{% block topbar %}
+  {% set mclass = record.method|lower in ['get','post','put','patch','delete'] ? 'm-' ~ record.method|lower : 'm-other' %}
+  <div class="crumb">
+    <a class="back" href="/monitor/requests" title="İstek kayıtlarına dön" aria-label="İstek kayıtlarına dön">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </a>
+    <span class="badge {{ mclass }}">{{ record.method }}</span>
+    <span class="uri" title="{{ record.uri }}">{{ record.uri }}</span>
+  </div>
+{% endblock %}
+
+{% block content %}
+
+  {% set sclass = (record.status // 100) %}
+  {% set dclass = record.duration_ms >= slowMs ? 'd-slow' : (record.duration_ms >= slowMs / 3 ? 'd-mid' : 'd-fast') %}
+
+  <section class="panel strip">
+    <div>
+      <div class="l">Durum</div>
+      <div class="n"><span class="status s-{{ sclass }}" style="font-size:20px">{{ record.status }}</span></div>
+    </div>
+    <div>
+      <div class="l">Süre</div>
+      <div class="n num {{ dclass }}">{{ record.duration_ms|number_format(1, ',', '.') }}<small>ms</small></div>
+    </div>
+    <div>
+      <div class="l">Sorgular</div>
+      <div class="n num">{{ record.query_count }}<small>· {{ record.query_time_ms|number_format(1, ',', '.') }} ms</small></div>
+    </div>
+    <div>
+      <div class="l">Cache</div>
+      <div class="n num">{{ record.cache_hits }}<small>hit</small> {{ record.cache_misses }}<small>miss</small></div>
+    </div>
+    <div>
+      <div class="l">Bellek</div>
+      <div class="n num">{{ (record.memory_kb / 1024)|number_format(1, ',', '.') }}<small>MB</small></div>
+    </div>
+    <div>
+      <div class="l">Zaman</div>
+      <div class="n num" style="font-size:15px;padding-top:4px">{{ record.created_at|date('d.m.Y H:i:s') }}</div>
+    </div>
+  </section>
+
+  <div class="cols">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head"><h2>Ayrıntılar</h2></div>
+        <dl class="kv">
+          <dt>Request ID</dt><dd>{{ record.request_id }}</dd>
+          <dt>Route</dt><dd>{{ record.route_name ?: '— (eşleşen route yok)' }}</dd>
+          <dt>Kullanıcı</dt><dd>{{ record.user_uuid ?: '— (kimlik doğrulanmadı)' }}</dd>
+          <dt>IP</dt><dd>{{ record.ip ?: '—' }}</dd>
+          <dt>Zaman</dt><dd>{{ record.created_at }}</dd>
+        </dl>
+      </section>
+
+      {# Hassas anahtarlar KeyScrubber tarafından maskelenmiş olarak saklandı;
+         burada ek bir maskeleme yapılmaz (tek maskeleme kaynağı ilkesi). #}
+      <details class="panel" open>
+        <summary>İstek header'ları</summary>
+        <div class="body"><pre>{{ headers ?: '—' }}</pre></div>
+      </details>
+
+      <details class="panel"{{ requestBody ? ' open' : '' }}>
+        <summary>İstek gövdesi {% if not requestBody %}<span class="faint" style="font-weight:400">— boş / kaydedilmedi</span>{% endif %}</summary>
+        <div class="body"><pre>{{ requestBody ?: '—' }}</pre></div>
+      </details>
+
+      <details class="panel"{{ responseBody ? ' open' : '' }}>
+        <summary>Yanıt gövdesi {% if not responseBody %}<span class="faint" style="font-weight:400">— boş / kaydedilmedi</span>{% endif %}</summary>
+        <div class="body"><pre>{{ responseBody ?: '—' }}</pre></div>
+      </details>
+    </div>
+
+    <div class="stack">
+
+      {% if exceptions is not empty %}
+        <section class="panel panel-err">
+          <div class="panel-head">
+            <h2 class="s-5">Hatalar</h2>
+            <span class="flag">{{ exceptions|length }}</span>
+          </div>
+          {% for e in exceptions %}
+            <div class="exc">
+              <div class="exc-class">{{ e.exception_class }}</div>
+              <div class="exc-msg">{{ e.message }}</div>
+              <div class="exc-loc">{{ e.file }}:{{ e.line }}</div>
+              {% if e.trace %}
+                <details class="inner">
+                  <summary>Yığın izi</summary>
+                  <pre>{{ e.trace }}</pre>
+                </details>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Sorgular</h2>
+          <span class="pill num">{{ record.query_count }}</span>
+          {% if record.n_plus_one %}<span class="flag">N+1 şüphesi</span>{% endif %}
+          <span class="spacer"></span>
+          <span class="faint" style="font-size:12px">yavaş eşiği ≥ {{ slowQueryMs }} ms</span>
+        </div>
+        {% if queries is empty %}
+          <div class="empty">
+            {% if record.query_count > 0 %}
+              <strong>Detay saklanmadı</strong>
+              Bu istek {{ record.query_count }} sorgu attı (MONITOR_MAX_QUERIES sınırı).
+            {% else %}
+              <strong>Sorgu yok</strong>
+              Bu istek veritabanına gitmedi.
+            {% endif %}
+          </div>
+        {% else %}
+          {% if record.query_count > queries|length %}
+            <div class="panel-body muted" style="border-bottom:1px solid var(--border);font-size:12.5px">
+              {{ record.query_count }} sorgunun ilk {{ queries|length }} tanesi gösteriliyor (MONITOR_MAX_QUERIES sınırı).
+            </div>
+          {% endif %}
+          {% set qmax = max(queries|map(q => q.duration_ms)) %}
+          {% for q in queries %}
+            <div class="q">
+              <div class="q-head {{ q.slow ? 'd-slow' : 'd-fast' }}">
+                <span class="q-idx">#{{ loop.index }}</span>
+                <div class="q-bar"><span style="width:{{ qmax > 0 ? max(2, q.duration_ms / qmax * 100) : 0 }}%"></span></div>
+                {% if q.slow %}<span class="flag">yavaş</span>{% endif %}
+                <span class="q-ms">{{ q.duration_ms|number_format(2, ',', '.') }} ms</span>
+              </div>
+              <pre>{{ q.sql_text }}</pre>
+              {% if q.bindings %}
+                <details class="inner">
+                  <summary>Parametreler</summary>
+                  <pre>{{ q.bindings }}</pre>
+                </details>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% endif %}
+      </section>
+
+    </div>
+  </div>
+
+{% endblock %}

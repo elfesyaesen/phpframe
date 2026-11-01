@@ -1,0 +1,19 @@
+# storage/ hicbir zaman web'den erisilebilir olmamali: yuklenen dosyalar,
+# loglar ve cache burada durur. Web koku public/ oldugu surece bu dosya
+# devreye girmez; web koku yanlislikla proje kokune kayarsa son savunma
+# hattidir.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+
+# Yine de bir dosya sunulursa PHP olarak calistirilmasin.
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+Options -ExecCGI -Indexes
+RemoveHandler .php .phtml .phar
+RemoveType .php .phtml .phar

@@ -1,0 +1,19 @@
+# Bu klasör DocumentRoot OLMAMALIDIR. Webroot: ./public/
+#
+# Güvenlik ağı: Apache yanlışlıkla proje köküne yönlendirilirse HİÇBİR dosya
+# servis edilmez. Bu satırlar olmadan `.env` (veritabanı şifresi, SECRET_KEY),
+# `storage/logs/` ve kaynak kod doğrudan indirilebilirdi.
+#
+# Bu dosya doğru kurulumda (DocumentRoot = public/) hiç okunmaz; yalnızca
+# yanlış yapılandırmada devreye girer.
+
+# Apache 2.4+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+# Apache 2.2
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

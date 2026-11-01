@@ -1,0 +1,194 @@
+{% extends "@monitor/layout.twig" %}
+
+{#
+  Rapor sayfası — seçili aralıktaki TÜM trafiğin özeti. Filtrelenebilir
+  istek listesi ayrı sayfada: requests.twig (/monitor/requests).
+#}
+
+{% block title %}Monitor — Genel bakış{% endblock %}
+
+{% block head %}
+  <style>
+    .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+    .kpi { padding: 16px 18px; position: relative; overflow: hidden; color: var(--text); }
+    a.kpi:hover { text-decoration: none; border-color: var(--border-2); }
+    .kpi::before {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--k, var(--accent));
+    }
+    .kpi .l { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .kpi .n { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; line-height: 1.15; }
+    .kpi .n small { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+    .kpi .h { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+
+    .grid-2 { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 20px; }
+
+    .chart { display: flex; align-items: flex-end; gap: 3px; height: 220px; padding-top: 8px; }
+    .chart .col {
+      flex: 1; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start;
+      border-radius: 4px 4px 0 0; background: var(--panel-2); position: relative; min-width: 3px;
+    }
+    .chart .col:hover { outline: 1px solid var(--border-2); }
+    .chart .seg-ok     { background: var(--accent); opacity: .85; }
+    .chart .seg-client { background: var(--amber); }
+    .chart .seg-server { background: var(--red); }
+    .chart .col > span:last-child { border-radius: 4px 4px 0 0; }
+    .axis { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; color: var(--faint); }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+    .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+    .dist { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+    .dist span { display: block; height: 100%; }
+    .dist-rows { margin: 16px 0 0; display: grid; gap: 4px; }
+    .dist-row {
+      display: grid; grid-template-columns: 14px 1fr auto auto; gap: 10px; align-items: center;
+      font-size: 13px; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; color: var(--text);
+    }
+    a.dist-row:hover { background: var(--panel-2); text-decoration: none; }
+    .dist-row i { width: 10px; height: 10px; border-radius: 3px; }
+
+    .ep { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); }
+    .ep:last-child { border-bottom: 0; }
+    .ep .uri { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .ep .uri:hover { color: var(--accent); }
+    .ep .bar { grid-column: 2 / 4; height: 4px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+    .ep .bar span { display: block; height: 100%; background: var(--violet); border-radius: 99px; }
+
+    @media (max-width: 1400px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 1100px) { .grid-2 { grid-template-columns: 1fr; } }
+    @media (max-width: 640px)  { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+{% endblock %}
+
+{% block topbar %}
+  <h1>Genel bakış</h1>
+  {% include "@monitor/_range.twig" %}
+{% endblock %}
+
+{% block content %}
+
+  {% set errorRate = summary.total > 0 ? (summary.errors / summary.total * 100) : 0 %}
+  {% set h = '?hours=' ~ filters.hours %}
+
+  {# ── KPI'lar — her kart ilgili kayıt listesine götürür ───── #}
+  <section class="kpis">
+    <a class="panel kpi" style="--k:var(--accent)" href="/monitor/requests{{ h }}">
+      <div class="l">İstek</div>
+      <div class="n num">{{ summary.total|number_format(0, ',', '.') }}</div>
+      <div class="h">son {{ filters.hours < 24 ? filters.hours ~ ' saat' : (filters.hours // 24) ~ ' gün' }}</div>
+    </a>
+    <a class="panel kpi" style="--k:var(--red)" href="/monitor/requests{{ h }}&amp;status_class=5">
+      <div class="l">Hata oranı (5xx)</div>
+      <div class="n num {{ summary.errors > 0 ? 's-5' : '' }}">{{ errorRate|number_format(errorRate > 0 and errorRate < 10 ? 1 : 0, ',', '.') }}<small>%</small></div>
+      <div class="h">{{ summary.errors }} sunucu hatası</div>
+    </a>
+    <div class="panel kpi" style="--k:var(--green)">
+      <div class="l">Ortalama süre</div>
+      <div class="n num">{{ summary.avg_ms|number_format(1, ',', '.') }}<small>ms</small></div>
+      <div class="h">en yüksek {{ summary.max_ms|number_format(0, ',', '.') }} ms</div>
+    </div>
+    <a class="panel kpi" style="--k:var(--violet)" href="/monitor/requests{{ h }}&amp;min_duration={{ slowMs }}">
+      <div class="l">Yavaş istek</div>
+      <div class="n num {{ summary.slow > 0 ? 'd-slow' : '' }}">{{ summary.slow }}</div>
+      <div class="h">≥ {{ slowMs }} ms</div>
+    </a>
+    <a class="panel kpi" style="--k:var(--blue)" href="/monitor/requests{{ h }}&amp;n_plus_one=1">
+      <div class="l">N+1 şüphesi</div>
+      <div class="n num {{ summary.n_plus_one > 0 ? 's-4' : '' }}">{{ summary.n_plus_one }}</div>
+      <div class="h">tekrarlayan sorgu deseni</div>
+    </a>
+    <a class="panel kpi" style="--k:var(--amber)" href="/monitor/requests{{ h }}&amp;status_class=4">
+      <div class="l">İstemci hatası (4xx)</div>
+      <div class="n num">{{ summary.s4 }}</div>
+      <div class="h">doğrulama, yetki, bulunamadı</div>
+    </a>
+  </section>
+
+  {# ── Trafik + dağılım ───────────────────────────────────── #}
+  <section class="grid-2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Trafik</h2>
+        <span class="faint" style="font-size:12px">tepe: {{ timeline.peak }} istek / dilim</span>
+        <span class="spacer"></span>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>başarılı</span>
+          <span><i style="background:var(--amber)"></i>4xx</span>
+          <span><i style="background:var(--red)"></i>5xx</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="chart" role="img" aria-label="Zaman dilimlerine göre istek sayısı">
+          {% for b in timeline.bars %}
+            <div class="col" title="{{ b.label }} · {{ b.total }} istek ({{ b.client }} 4xx, {{ b.server }} 5xx)">
+              {% if b.ok %}<span class="seg-ok" style="height:{{ b.pct_ok }}%"></span>{% endif %}
+              {% if b.client %}<span class="seg-client" style="height:{{ b.pct_client }}%"></span>{% endif %}
+              {% if b.server %}<span class="seg-server" style="height:{{ b.pct_server }}%"></span>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        {% if timeline.bars is not empty %}
+          <div class="axis">
+            <span>{{ (timeline.bars|first).label }}</span>
+            <span>{{ timeline.bars[timeline.bars|length // 2].label }}</span>
+            <span>şimdi</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Durum dağılımı</h2></div>
+      <div class="panel-body">
+        {% set dist = [
+          {'k': '2xx', 'c2': '2', 'n': summary.s2, 'c': 'var(--green)'},
+          {'k': '3xx', 'c2': '3', 'n': summary.s3, 'c': 'var(--blue)'},
+          {'k': '4xx', 'c2': '4', 'n': summary.s4, 'c': 'var(--amber)'},
+          {'k': '5xx', 'c2': '5', 'n': summary.s5, 'c': 'var(--red)'},
+        ] %}
+        <div class="dist">
+          {% for d in dist %}
+            {% if summary.total > 0 and d.n > 0 %}<span style="width:{{ d.n / summary.total * 100 }}%;background:{{ d.c }}" title="{{ d.k }}: {{ d.n }}"></span>{% endif %}
+          {% endfor %}
+        </div>
+        <div class="dist-rows">
+          {% for d in dist %}
+            <a class="dist-row" href="/monitor/requests{{ h }}&amp;status_class={{ d.c2 }}">
+              <i style="background:{{ d.c }}"></i>
+              <span>{{ d.k }}</span>
+              <span class="num">{{ d.n|number_format(0, ',', '.') }}</span>
+              <span class="num faint" style="min-width:48px;text-align:right">{{ summary.total > 0 ? (d.n / summary.total * 100)|number_format(1, ',', '.') : '0' }}%</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── En yavaş uç noktalar ───────────────────────────────── #}
+  <section class="panel">
+    <div class="panel-head">
+      <h2>En yavaş uç noktalar</h2>
+      <span class="faint" style="font-size:12px">ortalama süreye göre</span>
+    </div>
+    {% if endpoints is empty %}
+      <div class="empty">
+        <strong>Kayıt yok</strong>
+        Bu aralıkta kaydedilmiş istek bulunmuyor.
+      </div>
+    {% else %}
+      {% set slowest = (endpoints|first).avg_ms %}
+      <div class="panel-body" style="padding-top:6px;padding-bottom:6px">
+        {% for ep in endpoints %}
+          {% set em = ep.method|lower in ['get','post','put','patch','delete'] ? 'm-' ~ ep.method|lower : 'm-other' %}
+          <div class="ep">
+            <span class="badge {{ em }}">{{ ep.method }}</span>
+            <a class="uri mono" href="/monitor/requests{{ h }}&amp;method={{ ep.method|url_encode }}&amp;q={{ ep.uri|url_encode }}" title="{{ ep.uri }}">{{ ep.uri }}</a>
+            <span class="num mono {{ ep.avg_ms >= slowMs ? 'd-slow' : '' }}">{{ ep.avg_ms|number_format(1, ',', '.') }} ms <span class="faint">· {{ ep.hits }}×</span></span>
+            <div class="bar"><span style="width:{{ slowest > 0 ? ep.avg_ms / slowest * 100 : 0 }}%"></span></div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+{% endblock %}

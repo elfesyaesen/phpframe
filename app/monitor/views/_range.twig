@@ -1,0 +1,13 @@
+{#
+  Zaman aralığı düğmeleri + canlı izleme — rapor ve liste sayfalarının
+  üst çubuğunda ortak. `base` sayfanın yolu; `rangeQuery` aralık dışındaki
+  filtreleri korur.
+#}
+<nav class="seg" aria-label="Zaman aralığı">
+  {% for r in ranges %}
+    <a href="{{ base }}?hours={{ r }}{{ rangeQuery }}" class="{{ filters.hours == r ? 'on' : '' }}">{{ r < 24 ? r ~ ' sa' : (r // 24) ~ ' gün' }}</a>
+  {% endfor %}
+</nav>
+<a href="{{ liveUrl }}" class="pill {{ filters.live ? 'pill-live' : '' }}" title="{{ filters.live ? 'Canlı izlemeyi durdur' : 'Yeni istekler geldikçe sayfayı güncelle' }}">
+  <span class="dot"></span>{{ filters.live ? 'Canlı' : 'Canlı izle' }}
+</a>
